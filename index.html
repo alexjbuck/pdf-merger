@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Merger</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  max-width: 640px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #222;
+  background: #fafafa;
+}
+h1 { text-align: center; margin-bottom: 1.5rem; }
+#dropzone {
+  border: 2px dashed #999;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+#dropzone.hover {
+  border-color: #337ab7;
+  background: #e8f0fe;
+}
+#file-input { display: none; }
+ul#file-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+ul#file-list li {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.25rem;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: grab;
+}
+ul#file-list li.dragging { opacity: 0.4; }
+.grip {
+  margin-right: 0.75rem;
+  color: #999;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remove-btn {
+  background: none;
+  border: none;
+  color: #c00;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+.remove-btn:hover { color: #900; }
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 1rem 0;
+}
+.controls input[type="text"] {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+#merge-btn {
+  padding: 0.5rem 1.5rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 4px;
+  background: #337ab7;
+  color: #fff;
+  cursor: pointer;
+}
+#merge-btn:disabled { background: #aaa; cursor: not-allowed; }
+#merge-btn:not(:disabled):hover { background: #286090; }
+#status {
+  padding: 0.75rem;
+  border-radius: 4px;
+  display: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#status.error   { display: block; background: #fdd; color: #900; }
+#status.success { display: block; background: #dfd; color: #060; }
+#status.info    { display: block; background: #def; color: #036; }
+</style>
+</head>
+<body>
+<h1>PDF Merger</h1>
+
+<div id="dropzone">
+  <p>Drop PDF files here or click to select</p>
+  <input type="file" id="file-input" multiple accept=".pdf">
+</div>
+
+<ul id="file-list"></ul>
+
+<div class="controls">
+  <input type="text" id="filename" value="merged.pdf" placeholder="Output filename">
+  <button id="merge-btn" disabled>Merge</button>
+</div>
+
+<div id="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script>
+(function () {
+  var PDFDocument = PDFLib.PDFDocument;
+  var pdfFiles = [];
+
+  var dropzone = document.getElementById("dropzone");
+  var fileInput = document.getElementById("file-input");
+  var fileList = document.getElementById("file-list");
+  var mergeBtn = document.getElementById("merge-btn");
+  var filenameInput = document.getElementById("filename");
+  var statusDiv = document.getElementById("status");
+
+  // --- Drop zone ---
+  dropzone.addEventListener("click", function () { fileInput.click(); });
+  dropzone.addEventListener("dragover", function (e) {
+    e.preventDefault();
+    dropzone.classList.add("hover");
+  });
+  dropzone.addEventListener("dragleave", function () {
+    dropzone.classList.remove("hover");
+  });
+  dropzone.addEventListener("drop", function (e) {
+    e.preventDefault();
+    dropzone.classList.remove("hover");
+    addFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener("change", function () {
+    addFiles(fileInput.files);
+    fileInput.value = "";
+  });
+
+  // --- Add files ---
+  function addFiles(files) {
+    var i = 0;
+    function next() {
+      if (i >= files.length) { renderList(); return; }
+      var file = files[i];
+      i++;
+      if (file.type && file.type !== "application/pdf") { next(); return; }
+      var reader = new FileReader();
+      reader.onload = function () {
+        pdfFiles.push({ name: file.name, data: reader.result });
+        next();
+      };
+      reader.onerror = function () { next(); };
+      reader.readAsArrayBuffer(file);
+    }
+    next();
+  }
+
+  // --- Render list ---
+  function renderList() {
+    while (fileList.firstChild) { fileList.removeChild(fileList.firstChild); }
+    for (var idx = 0; idx < pdfFiles.length; idx++) {
+      (function (index) {
+        var li = document.createElement("li");
+        li.setAttribute("draggable", "true");
+        li.setAttribute("data-index", index);
+
+        var grip = document.createElement("span");
+        grip.className = "grip";
+        grip.textContent = "\u2630";
+        li.appendChild(grip);
+
+        var nameSpan = document.createElement("span");
+        nameSpan.className = "file-name";
+        nameSpan.textContent = pdfFiles[index].name;
+        li.appendChild(nameSpan);
+
+        var removeBtn = document.createElement("button");
+        removeBtn.className = "remove-btn";
+        removeBtn.textContent = "\u00d7";
+        removeBtn.setAttribute("type", "button");
+        removeBtn.addEventListener("click", function () {
+          pdfFiles.splice(index, 1);
+          renderList();
+        });
+        li.appendChild(removeBtn);
+
+        // Drag-and-drop reorder
+        li.addEventListener("dragstart", function (e) {
+          li.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", String(index));
+        });
+        li.addEventListener("dragend", function () {
+          li.classList.remove("dragging");
+        });
+        li.addEventListener("dragover", function (e) { e.preventDefault(); });
+        li.addEventListener("drop", function (e) {
+          e.preventDefault();
+          var fromIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+          var toIndex = index;
+          if (fromIndex === toIndex) return;
+          var item = pdfFiles.splice(fromIndex, 1)[0];
+          pdfFiles.splice(toIndex, 0, item);
+          renderList();
+        });
+
+        fileList.appendChild(li);
+      })(idx);
+    }
+    mergeBtn.disabled = pdfFiles.length < 2;
+    clearStatus();
+  }
+
+  // --- Status ---
+  function showStatus(msg, type) {
+    statusDiv.className = type;
+    statusDiv.textContent = msg;
+  }
+  function clearStatus() {
+    statusDiv.className = "";
+    statusDiv.textContent = "";
+  }
+
+  // --- Merge ---
+  mergeBtn.addEventListener("click", function () {
+    if (pdfFiles.length < 2) return;
+    mergeBtn.disabled = true;
+    showStatus("Merging\u2026", "info");
+    var warnings = [];
+
+    PDFDocument.create().then(function (mergedPdf) {
+      var chain = Promise.resolve();
+      for (var i = 0; i < pdfFiles.length; i++) {
+        (function (file) {
+          chain = chain.then(function () {
+            return PDFDocument.load(file.data, { ignoreEncryption: false }).then(function (srcPdf) {
+              return mergedPdf.copyPages(srcPdf, srcPdf.getPageIndices()).then(function (pages) {
+                for (var p = 0; p < pages.length; p++) {
+                  mergedPdf.addPage(pages[p]);
+                }
+              });
+            }).catch(function (err) {
+              var msg = err.message || "";
+              if (msg.indexOf("encrypt") !== -1 || msg.indexOf("password") !== -1) {
+                warnings.push(file.name + ": skipped (encrypted/password-protected)");
+              } else {
+                throw err;
+              }
+            });
+          });
+        })(pdfFiles[i]);
+      }
+
+      return chain.then(function () {
+        if (mergedPdf.getPageCount() === 0) {
+          throw new Error("No pages to merge. All files may be encrypted.");
+        }
+        return mergedPdf.save();
+      });
+    }).then(function (bytes) {
+      var blob = new Blob([bytes], { type: "application/pdf" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      var fname = filenameInput.value.trim() || "merged.pdf";
+      if (fname.indexOf(".pdf") === -1) fname += ".pdf";
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      if (warnings.length > 0) {
+        showStatus("Merged with warnings:\n" + warnings.join("\n"), "info");
+      } else {
+        showStatus("Merge complete! Download started.", "success");
+      }
+    }).catch(function (err) {
+      showStatus("Error: " + (err.message || err), "error");
+    }).then(function () {
+      mergeBtn.disabled = pdfFiles.length < 2;
+    });
+  });
+})();
+</script>
+</body>
+</html>
