@@ -4,6 +4,8 @@ A client-side PDF merger that runs entirely in the browser as a single `index.ht
 
 ## Deploy to GitHub Pages
 
+[GitHub Pages](https://alexjbuck.github.io/pdf-merger/)
+
 1. Push this repository to GitHub.
 2. Go to **Settings → Pages**.
 3. Under **Source**, select the branch (e.g., `main`) and folder (`/ (root)`).
