@@ -142,8 +142,10 @@ ul#file-list li.dragging { opacity: 0.4; }
     addFiles(e.dataTransfer.files);
   });
   fileInput.addEventListener("change", function () {
-    addFiles(fileInput.files);
+    var snapshot = [];
+    for (var j = 0; j < fileInput.files.length; j++) snapshot.push(fileInput.files[j]);
     fileInput.value = "";
+    addFiles(snapshot);
   });
 
   // --- Add files ---
